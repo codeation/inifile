@@ -2,6 +2,8 @@
 
 Package inifile implements parsing a simple ini-file
 
+[![GoDoc](https://godoc.org/github.com/codeation/inifile?status.svg)](https://godoc.org/github.com/codeation/inifile)
+
 # Installation
 
 To install inifile package:
@@ -71,7 +73,3 @@ $ SAMPLE_INI=/etc/server_configuration.ini go run sample.go
 The name of the environment variable must match the inifile.Read parameter.
 The base file name is used, the directory name is ignored.
 The letters of the file name are written in uppercase, the dot is replaced by an underscore.
-
-# Documentation
-
-See https://godoc.org/github.com/codeation/inifile

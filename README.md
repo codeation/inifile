@@ -54,14 +54,6 @@ port= 8080
 node.name= server.local
 ```
 
-# Installation
-
-To install inifile package:
-
-```
-go get -u github.com/codeation/inifile
-```
-
 # Environment variable
 
 You can specify a full path to ini-file through the environment variable. For example:

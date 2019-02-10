@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -17,70 +18,112 @@ type index struct {
 
 // IniFile stores the parsed values from a ini-file
 type IniFile struct {
-	sections []string
-	data     map[index]string
+	sections       []string
+	data           map[index]string
+	commandEnabled bool
 }
 
-// Get returns the value of variable from the specified section (use "" for an unnamed section)
-func (i *IniFile) Get(section string, name string) string {
-	return i.data[index{section: section, name: name}]
+// command makes substitution if external command or filename is encapsulated
+func command(s string) string {
+	if strings.HasPrefix(s, "$(<") && strings.HasSuffix(s, ")") {
+		// make filename contents substitution in line "$(<filename)"
+		filename := strings.TrimSuffix(strings.TrimPrefix(s, "$(<"), ")")
+		if data, err := ioutil.ReadFile(filename); err == nil {
+			return string(data)
+		}
+	} else if strings.HasPrefix(s, "$(") && strings.HasSuffix(s, ")") {
+		// encapsulate command output for line "$(command line)"
+		commandLine := strings.TrimSuffix(strings.TrimPrefix(s, "$("), ")")
+		commands := strings.Split(commandLine, " ")
+		if data, err := exec.Command(commands[0], commands[1:]...).Output(); err == nil {
+			return string(data)
+		}
+	}
+	// without substitution
+	return s
+}
+
+// Command enables or disables external commands encapsulation.
+// Note that executing external commands can lead to application vulnerabilities.
+func (ini *IniFile) Command(enabled bool) {
+	ini.commandEnabled = enabled
+}
+
+// Get returns the value of variable from the specified section
+// (use "" for an unnamed section).
+// Get makes substitution if commands encapsulation is enabled.
+// "$(<filename)" format for the file contents.
+// "$(command line)" format to encapsulate command output.
+func (ini *IniFile) Get(section string, name string) string {
+	s := ini.data[index{section: section, name: name}]
+	if ini.commandEnabled {
+		s = command(s)
+	}
+	return s
 }
 
 // Sections returns a list of partitions
-func (i *IniFile) Sections() []string {
-	return i.sections
+func (ini *IniFile) Sections() []string {
+	return ini.sections
 }
 
-// envFilename reads an environment variable that matches the static filename
+// envFilename reads an environment variable that matches the base file name
 func envFilename(filename string) string {
+	// The environment variable is checked only if
+	// the filename does not contain the directory name
 	if filepath.Base(filename) != filename {
 		return filename
 	}
-	if name := os.Getenv(strings.ToUpper(strings.Replace(filename, ".", "_", -1))); name != "" {
+	// The name of the environment variable is the file name in uppercase,
+	// the dot is replaced by an underscore
+	envName := strings.ToUpper(strings.Replace(filename, ".", "_", -1))
+	if name := os.Getenv(envName); name != "" {
 		return name
 	}
+	// Environment variable not found
 	return filename
 }
 
-// Read parses the specified ini-file
+// Read parses the specified ini-file.
+// You can specify a full path to INI file via the environment variable.
+// The environment variable is checked only if
+// the filename does not contain the directory name.
+// The name of the environment variable is the file name in uppercase,
+// the dot is replaced by an underscore.
 func Read(filename string) (*IniFile, error) {
 	data, err := ioutil.ReadFile(envFilename(filename))
 	if err != nil {
 		return nil, err
 	}
-
-	output := &IniFile{data: map[index]string{}}
-	section := ""
-
+	ini := &IniFile{
+		data: map[index]string{},
+	}
+	sectionName := ""
 	for no, s := range strings.Split(string(data), "\n") {
 		// remove comment
-		i := strings.IndexAny(s, "#;")
-		if i >= 0 {
-			s = s[0:i]
+		if pos := strings.IndexAny(s, "#;"); pos >= 0 {
+			s = s[0:pos]
 		}
-
-		// ignore blank characters and line feeds
+		// trim blank characters and line feeds
 		s = strings.Trim(s, " \t\n\r")
-		if len(s) < 1 {
+		// ignore empty line
+		if len(s) == 0 {
 			continue
 		}
-
-		if s[0] == '[' {
-			// section name
-			section = strings.Trim(s, "[] \t")
-			output.sections = append(output.sections, section)
-
-		} else {
-			i = strings.IndexByte(s, '=')
-			if i > 0 {
-				// name = value
-				name := strings.Trim(s[0:i], " \t")
-				value := strings.Trim(s[i+1:], " '\"\t")
-				output.data[index{section: section, name: name}] = value
-			} else {
-				return nil, fmt.Errorf("Unknown value in file %s in line %d", filename, no+1)
-			}
+		// new section name
+		if strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]") {
+			sectionName = strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")
+			ini.sections = append(ini.sections, sectionName)
+			continue
 		}
+		// parsing the name=value pair
+		ss := strings.SplitN(s, "=", 2)
+		if len(ss) != 2 {
+			return nil, fmt.Errorf("unknown variable value in %s in line %d", filename, no+1)
+		}
+		name := strings.TrimSpace(ss[0])
+		value := strings.TrimSpace(ss[1])
+		ini.data[index{section: sectionName, name: name}] = value
 	}
-	return output, nil
+	return ini, nil
 }

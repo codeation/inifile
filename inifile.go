@@ -100,12 +100,11 @@ func Read(filename string) (*IniFile, error) {
 	}
 	sectionName := ""
 	for no, s := range strings.Split(string(data), "\n") {
-		// remove comment
+		// remove comments and trim spaces or line feeds
 		if pos := strings.IndexAny(s, "#;"); pos >= 0 {
 			s = s[0:pos]
 		}
-		// trim blank characters and line feeds
-		s = strings.Trim(s, " \t\n\r")
+		s = strings.TrimSpace(s)
 		// ignore empty line
 		if len(s) == 0 {
 			continue

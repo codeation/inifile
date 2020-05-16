@@ -1,7 +1,8 @@
-// Package inifile implements parsing a simple ini-file
+// Package inifile implements parsing a simple ini-file.
 package inifile
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -10,20 +11,24 @@ import (
 	"strings"
 )
 
-// index is section/name pair
+var errorValue = errors.New("unknown variable value")
+
+const sides = 2
+
+// index is section/name pair.
 type index struct {
 	section string
 	name    string
 }
 
-// IniFile stores the parsed values from a ini-file
+// IniFile stores the parsed values from a ini-file.
 type IniFile struct {
 	sections       []string
 	data           map[index]string
 	commandEnabled bool
 }
 
-// command makes substitution if external command or filename is encapsulated
+// command makes substitution if external command or filename is encapsulated.
 func command(s string) string {
 	if strings.HasPrefix(s, "$(<") && strings.HasSuffix(s, ")") {
 		// make filename contents substitution in line "$(<filename)"
@@ -59,15 +64,16 @@ func (ini *IniFile) Get(section string, name string) string {
 	if ini.commandEnabled {
 		s = command(s)
 	}
+
 	return s
 }
 
-// Sections returns a list of partitions
+// Sections returns a list of partitions.
 func (ini *IniFile) Sections() []string {
 	return ini.sections
 }
 
-// envFilename reads an environment variable that matches the base file name
+// envFilename reads an environment variable that matches the base file name.
 func envFilename(filename string) string {
 	// The environment variable is checked only if
 	// the filename does not contain the directory name
@@ -93,36 +99,42 @@ func envFilename(filename string) string {
 func Read(filename string) (*IniFile, error) {
 	data, err := ioutil.ReadFile(envFilename(filename))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("readFile: %w", err)
 	}
+
 	ini := &IniFile{
 		data: map[index]string{},
 	}
-	sectionName := ""
+
+	var sectionName string
+
 	for no, s := range strings.Split(string(data), "\n") {
 		// remove comments and trim spaces or line feeds
 		if pos := strings.IndexAny(s, "#;"); pos >= 0 {
 			s = s[0:pos]
 		}
+
 		s = strings.TrimSpace(s)
+
 		// ignore empty line
 		if len(s) == 0 {
 			continue
 		}
+
 		// new section name
 		if strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]") {
-			sectionName = strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")
-			ini.sections = append(ini.sections, sectionName)
+			ini.sections = append(ini.sections, strings.TrimSuffix(strings.TrimPrefix(s, "["), "]"))
 			continue
 		}
+
 		// parsing the name=value pair
-		ss := strings.SplitN(s, "=", 2)
-		if len(ss) != 2 {
-			return nil, fmt.Errorf("unknown variable value in %s in line %d", filename, no+1)
+		ss := strings.SplitN(s, "=", sides)
+		if len(ss) != sides {
+			return nil, fmt.Errorf("%w (%s, %d)", errorValue, filename, no+1)
 		}
-		name := strings.TrimSpace(ss[0])
-		value := strings.TrimSpace(ss[1])
-		ini.data[index{section: sectionName, name: name}] = value
+
+		ini.data[index{section: sectionName, name: strings.TrimSpace(ss[0])}] = strings.TrimSpace(ss[1])
 	}
+
 	return ini, nil
 }

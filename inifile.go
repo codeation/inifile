@@ -123,7 +123,8 @@ func Read(filename string) (*IniFile, error) {
 
 		// new section name
 		if strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]") {
-			ini.sections = append(ini.sections, strings.TrimSuffix(strings.TrimPrefix(s, "["), "]"))
+			sectionName = strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")
+			ini.sections = append(ini.sections, sectionName)
 			continue
 		}
 
@@ -135,6 +136,5 @@ func Read(filename string) (*IniFile, error) {
 
 		ini.data[index{section: sectionName, name: strings.TrimSpace(ss[0])}] = strings.TrimSpace(ss[1])
 	}
-
 	return ini, nil
 }
